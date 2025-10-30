@@ -1,0 +1,185 @@
+/***************************************************************************
+ * Project: IoT-Enabled Patient Vital Signs Monitoring with Emergency Alerts
+ * Board: BRD2605A Rev A02 (Silicon Labs)
+ * MCU: EFR32/BG22 Series (with BLE)
+ * Language: C (Simplicity Studio + Gecko SDK)
+ ***************************************************************************/
+
+#include "em_device.h"
+#include "em_chip.h"
+#include "em_cmu.h"
+#include "em_gpio.h"
+#include "em_i2c.h"
+#include "sl_bluetooth.h"
+#include "app_assert.h"
+#include "app_log.h"
+#include "sl_sleeptimer.h"
+#include "stdio.h"
+#include "string.h"
+#include "math.h"
+
+// -------------------- Sensor I2C Addresses --------------------
+#define MAX30102_ADDR   0x57
+#define MLX90614_ADDR   0x5A
+#define MPU6050_ADDR    0x68
+
+// -------------------- Thresholds ------------------------------
+#define TEMP_HIGH_LIMIT  38.0
+#define TEMP_LOW_LIMIT   35.0
+#define HR_HIGH_LIMIT    120
+#define HR_LOW_LIMIT     50
+#define SPO2_LOW_LIMIT   90
+#define FALL_THRESHOLD   2.0   // g-force limit for fall detection
+
+// -------------------- Function Prototypes ---------------------
+void initMCU(void);
+void initI2C(void);
+float readTemperature(void);
+void readHeartRateAndSpO2(int *hr, int *spo2);
+void readMotion(float *ax, float *ay, float *az);
+void checkAndAlert(float temp, int hr, int spo2, float ax, float ay, float az);
+void bleSendData(float temp, int hr, int spo2, float ax, float ay, float az);
+void delayMs(uint32_t ms);
+
+// -------------------- Main Program -----------------------------
+int main(void)
+{
+    CHIP_Init();
+    initMCU();
+    initI2C();
+
+    app_log("Starting Patient Vital Signs Monitoring...\n");
+
+    while (1)
+    {
+        float temperature = readTemperature();
+        int heartRate = 0, spo2 = 0;
+        float ax = 0, ay = 0, az = 0;
+
+        readHeartRateAndSpO2(&heartRate, &spo2);
+        readMotion(&ax, &ay, &az);
+
+        app_log("Temp: %.2f°C | HR: %d bpm | SpO2: %d%% | Ax: %.2f Ay: %.2f Az: %.2f\n",
+                temperature, heartRate, spo2, ax, ay, az);
+
+        bleSendData(temperature, heartRate, spo2, ax, ay, az);
+        checkAndAlert(temperature, heartRate, spo2, ax, ay, az);
+
+        delayMs(5000);  // Read every 5 seconds
+    }
+}
+
+// -------------------- MCU Initialization ----------------------
+void initMCU(void)
+{
+    CMU_ClockEnable(cmuClock_GPIO, true);
+    CMU_ClockEnable(cmuClock_I2C0, true);
+}
+
+// -------------------- I2C Initialization ----------------------
+void initI2C(void)
+{
+    I2C_Init_TypeDef i2cInit = I2C_INIT_DEFAULT;
+    I2C_Init(I2C0, &i2cInit);
+}
+
+// -------------------- MLX90614 Read (Temperature) -------------
+float readTemperature(void)
+{
+    uint8_t cmd = 0x07; // RAM access for object temperature
+    uint8_t data[3] = {0};
+    float tempC = 0;
+
+    I2C_TransferSeq_TypeDef seq;
+    seq.addr = MLX90614_ADDR << 1;
+    seq.flags = I2C_FLAG_WRITE_READ;
+    seq.buf[0].data = &cmd;
+    seq.buf[0].len = 1;
+    seq.buf[1].data = data;
+    seq.buf[1].len = 3;
+
+    if (I2C_TransferInit(I2C0, &seq) == i2cTransferDone)
+    {
+        uint16_t raw = (data[1] << 8) | data[0];
+        tempC = (raw * 0.02) - 273.15; // Convert from Kelvin
+    }
+
+    return tempC;
+}
+
+// -------------------- MAX30102 (Heart Rate & SpO2) -------------
+void readHeartRateAndSpO2(int *hr, int *spo2)
+{
+    // Simplified placeholder; real implementation uses pulse algorithm
+    *hr = 75 + (rand() % 5 - 2);
+    *spo2 = 97 + (rand() % 2);
+}
+
+// -------------------- MPU6050 (Motion / Fall Detection) --------
+void readMotion(float *ax, float *ay, float *az)
+{
+    uint8_t reg = 0x3B; // Start of accelerometer data
+    uint8_t data[6];
+    int16_t rawX, rawY, rawZ;
+
+    I2C_TransferSeq_TypeDef seq;
+    seq.addr = MPU6050_ADDR << 1;
+    seq.flags = I2C_FLAG_WRITE_READ;
+    seq.buf[0].data = &reg;
+    seq.buf[0].len = 1;
+    seq.buf[1].data = data;
+    seq.buf[1].len = 6;
+
+    if (I2C_TransferInit(I2C0, &seq) == i2cTransferDone)
+    {
+        rawX = (data[0] << 8) | data[1];
+        rawY = (data[2] << 8) | data[3];
+        rawZ = (data[4] << 8) | data[5];
+        *ax = rawX / 16384.0;
+        *ay = rawY / 16384.0;
+        *az = rawZ / 16384.0;
+    }
+}
+
+// -------------------- BLE Data Transmission -------------------
+void bleSendData(float temp, int hr, int spo2, float ax, float ay, float az)
+{
+    char bleMessage[128];
+    sprintf(bleMessage, "TEMP:%.2f,HR:%d,SPO2:%d,AX:%.2f,AY:%.2f,AZ:%.2f",
+            temp, hr, spo2, ax, ay, az);
+
+    // Example BLE characteristic update (pseudo)
+    // sl_bt_gatt_server_write_attribute_value(gattdb_vitals, 0, strlen(bleMessage),
+    //                                        (uint8_t *)bleMessage);
+
+    app_log("BLE TX: %s\n", bleMessage);
+}
+
+// -------------------- Emergency Alert Logic -------------------
+void checkAndAlert(float temp, int hr, int spo2, float ax, float ay, float az)
+{
+    float gForce = sqrt(ax*ax + ay*ay + az*az);
+    bool abnormal = false;
+
+    if (temp > TEMP_HIGH_LIMIT || temp < TEMP_LOW_LIMIT) abnormal = true;
+    if (hr > HR_HIGH_LIMIT || hr < HR_LOW_LIMIT) abnormal = true;
+    if (spo2 < SPO2_LOW_LIMIT) abnormal = true;
+    if (gForce > FALL_THRESHOLD) abnormal = true;
+
+    if (abnormal)
+    {
+        app_log("ALERT: Abnormal condition detected! Sending emergency signal...\n");
+
+        // BLE alert (pseudo)
+        // sl_bt_gatt_server_write_attribute_value(gattdb_alert, 0, 1, (uint8_t *)"1");
+
+        // Future Expansion:
+        // sendToCloud(temp, hr, spo2, gpsLat, gpsLon);
+    }
+}
+
+// -------------------- Delay Function --------------------------
+void delayMs(uint32_t ms)
+{
+    sl_sleeptimer_delay_millisecond(ms);
+}
