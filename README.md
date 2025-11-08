@@ -21,13 +21,10 @@ All readings are processed by the **Silicon Labs BRD2605A Rev A02** microcontrol
 | **MLX90614 Infrared Temperature Sensor** |  Measures body/skin temperature without physical contact.                       |
 | **MPU6050 6-axis Motion Sensor**         |  Detects patient falls or abnormal movements using accelerometer & gyroscope.   |
 
-> **Note:** Replace the *Insert Image Here* text with actual images once available.
 
 ---
 
 ## System Block Diagram
-
-*(Insert Block Diagram Image Here)*
 
 **Flow:**
 Sensors → Microcontroller (BRD2605A) → BLE Communication → Mobile/Cloud App → Emergency Alerts
