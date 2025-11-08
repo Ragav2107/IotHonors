@@ -18,7 +18,7 @@ All readings are processed by the **Silicon Labs BRD2605A Rev A02** microcontrol
 | ---------------------------------------- |  ------------------------------------------------------------------------------ |
 | **BRD2605A Rev A02 (SiLabs MCU Board)**  |  Main microcontroller that processes sensor data and handles BLE communication. |
 | **MAX30102 Heart Rate & SpO₂ Sensor**    |  Measures pulse rate and oxygen saturation using optical method.                |
-| **MLX90614 Infrared Temperature Sensor** |  Measures body/skin temperature without physical contact.                       |
+| **MLX90614 Temperature Sensor**          |  Measures body/skin temperature with physical contact.                       |
 | **MPU6050 6-axis Motion Sensor**         |  Detects patient falls or abnormal movements using accelerometer & gyroscope.   |
 
 
